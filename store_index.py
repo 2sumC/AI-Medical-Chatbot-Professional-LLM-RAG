@@ -35,7 +35,7 @@ print("Checking Pinecone index ...")
 if index_name not in pc.list_indexes().names():
     pc.create_index(
         name = index_name,
-        dimension = 768,
+        dimension = 384,
         metric = 'cosine',
         spec = ServerlessSpec(cloud='aws', region='us-east-1')
     )

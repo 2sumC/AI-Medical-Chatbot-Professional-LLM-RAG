@@ -47,7 +47,7 @@ def download_embeddings():
     '''
     Download and return the HuggingFace embeddings model.
     '''
-    model_name = 'sentence-transformers/all-mpnet-base-v2'
+    model_name = 'sentence-transformers/all-MiniLM-L6-v2'
     embeddings = HuggingFaceEmbeddings(
         model_name = model_name
     )

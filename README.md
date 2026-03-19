@@ -108,13 +108,13 @@ This allows the full RAG pipeline to run on your own infrastructure:
 This approach reduces exposure of medical data to external APIs and can be aligned with internal privacy policies.
 
 ## Embedding Model Choices
-The default embedding model is `sentence-transformers/all-mpnet-base-v2`, chosen for its strong retrieval quality
-and balanced performance. If you want to optimize for speed, quality, or hardware constraints, consider the options below.
+The default embedding model is `sentence-transformers/all-MiniLM-L6-v2`, chosen for its speed and low memory usage,
+which makes it easier to deploy on smaller instances. If you want to optimize for quality, consider the options below.
 
 | Model | Why Choose It | Tradeoffs |
 | --- | --- | --- |
-| `sentence-transformers/all-mpnet-base-v2` (current) | Strong overall retrieval quality and good general-purpose performance | Heavier than MiniLM, slower on CPU |
-| `sentence-transformers/all-MiniLM-L6-v2` | Very fast and lightweight; good for quick baselines | Lower semantic precision on technical text |
+| `sentence-transformers/all-MiniLM-L6-v2` (current) | Very fast and lightweight; ideal for small servers | Lower semantic precision on technical text |
+| `sentence-transformers/all-mpnet-base-v2` | Strong overall retrieval quality and good general-purpose performance | Heavier and slower; higher memory use |
 | `BAAI/bge-base-en-v1.5` | Excellent retrieval quality for English QA | Slightly slower; larger model |
 | `BAAI/bge-large-en-v1.5` | Higher accuracy than base | Much slower; higher memory use |
 | `intfloat/e5-base-v2` | Strong QA-style retrieval when using query/passage prefixes | Requires formatting queries for best results |
@@ -130,7 +130,7 @@ large medical PDFs.
 | `RETRIEVAL_K` | `3` | `app.py` | Returns a small, high-signal context set to reduce noise |
 | `SCORE_THRESHOLD` | `0.2` | `app.py` | Blocks low-confidence matches so the app can say “I don’t know” when appropriate |
 | `batch_size` | `50` | `store_index.py` | Avoids Pinecone upsert payload limits while staying reasonably fast |
-| `dimension` | `768` | `store_index.py` | Must match the embedding model output size (`all-mpnet-base-v2` outputs 768) |
+| `dimension` | `384` | `store_index.py` | Must match the embedding model output size (`all-MiniLM-L6-v2` outputs 384) |
 
 ## Troubleshooting
 - **Module not found**: ensure your virtual environment is active and dependencies are installed.
