@@ -7,6 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
 from src.prompt import *
 import os
+from functools import lru_cache
 
 app = Flask(__name__)
 
@@ -18,27 +19,26 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 os.environ['PINECONE_API_KEY'] = PINECONE_API_KEY
 os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
 
-embeddings = download_embeddings()
-
-index_name = 'medical-chatbot'
-
-docsearch = PineconeVectorStore.from_existing_index(
-    index_name=index_name,
-    embedding=embeddings
-)
-
 RETRIEVAL_K = 3
 SCORE_THRESHOLD = 0.2
+INDEX_NAME = 'medical-chatbot'
 
-chatModel = ChatOpenAI(model='gpt-5-nano')
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ('system', system_prompt),
-        ('human', '{input}')
-    ]
-)
-
-question_answer_chain = create_stuff_documents_chain(chatModel, prompt)
+@lru_cache(maxsize=1)
+def get_rag_components():
+    embeddings = download_embeddings()
+    docsearch = PineconeVectorStore.from_existing_index(
+        index_name=INDEX_NAME,
+        embedding=embeddings
+    )
+    chatModel = ChatOpenAI(model='gpt-5-nano')
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ('system', system_prompt),
+            ('human', '{input}')
+        ]
+    )
+    question_answer_chain = create_stuff_documents_chain(chatModel, prompt)
+    return docsearch, question_answer_chain
 
 
 
@@ -52,6 +52,7 @@ def chat():
     input = msg
     print(input)
 
+    docsearch, question_answer_chain = get_rag_components()
     results = docsearch.similarity_search_with_score(msg, k=RETRIEVAL_K)
     filtered = [(doc, score) for doc, score in results if score >= SCORE_THRESHOLD]
 
@@ -91,4 +92,5 @@ def chat():
     return clear_answer
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    port = int(os.getenv('PORT', '8080'))
+    app.run(host='0.0.0.0', port=port, debug=True)

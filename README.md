@@ -84,6 +84,15 @@ Open your browser at:
 http://localhost:8080
 ```
 
+## Deployment Notes
+If you deploy on Render (or any platform that expects a production server), the start command is:
+```bash
+gunicorn app:app --bind 0.0.0.0:$PORT
+```
+Meaning:
+- `app:app` points to the Flask instance named `app` inside `app.py`
+- `0.0.0.0:$PORT` binds to all network interfaces on the port provided by the platform
+
 ## Notes
 - The app uses the Pinecone index name `medical-chatbot` (see `app.py` and `store_index.py`).
 - If you add new PDFs later, re-run `python store_index.py` to update the index.
