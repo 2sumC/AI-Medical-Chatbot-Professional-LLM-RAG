@@ -1,0 +1,140 @@
+name: Deploy Docker to EC2
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  IMAGE_TAG: ${{ github.run_number }}-${{ github.sha }}
+
+jobs:
+  ci:
+    name: "CI - Build & Push"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_DEFAULT_REGION }}
+          
+      - name: Login to Amazon ECR
+        id: login
+        uses: aws-actions/amazon-ecr-login@v2  
+        
+      - name: Build and push Docker image
+        run: |
+          set -euo pipefail
+          
+          REGISTRY="${{ steps.login.outputs.registry }}"
+          ECR_REPO="${{ secrets.ECR_REPO }}"
+          IMAGE_URI="${REGISTRY}/${ECR_REPO}:${{ env.IMAGE_TAG }}"
+          LATEST_URI="${REGISTRY}/${ECR_REPO}:latest"
+          
+          echo "🏗️ Building image: ${IMAGE_URI}"
+          docker build --pull -t "${IMAGE_URI}" -t "${LATEST_URI}" .
+          
+          echo "📤 Pushing image to ECR..."
+          docker push "${IMAGE_URI}"
+          docker push "${LATEST_URI}"
+          
+          echo "✅ Image pushed: ${IMAGE_URI}"
+
+  cd:
+    name: "CD - Deploy to EC2"
+    needs: ci
+    runs-on: self-hosted
+    env:
+      APP_PORT: 8080
+      AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_DEFAULT_REGION }}
+          
+      - name: Login to Amazon ECR
+        id: login
+        uses: aws-actions/amazon-ecr-login@v2
+        
+      - name: Set image URI in environment
+        run: |
+          REGISTRY="${{ steps.login.outputs.registry }}"
+          ECR_REPO="${{ secrets.ECR_REPO }}"
+          IMAGE_URI="${REGISTRY}/${ECR_REPO}:${{ env.IMAGE_TAG }}"
+          
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
+          echo "🏷️ Set IMAGE_URI: ${IMAGE_URI}"
+            
+      - name: Pull Docker image
+        run: |
+          set -euo pipefail
+          
+          echo "📥 Pulling image: ${IMAGE_URI}"
+          if ! docker pull "${IMAGE_URI}"; then
+            echo "❌..."
+            docker system prune -f --volumes || true
+            docker pull "${IMAGE_URI}"
+          fi
+          
+      - name: Stop old container
+        run: |
+          set -euo pipefail
+          
+          echo "🛑 Stopping existing container..."
+          docker ps -aq --filter "name=medical-chat-bot" | xargs -r docker rm -f || true
+          echo "✅ Old container stopped"
+          
+      - name: Run new container
+        env:
+          OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+        run: |
+          set -euo pipefail
+          
+          echo "🚀 Starting new container..."
+          echo "🏷️ Using image: ${IMAGE_URI}"
+          
+          docker run -d \
+            --restart unless-stopped \
+            --name medical-chat-bot \
+            --log-driver json-file \
+            --log-opt max-size=10m \
+            --log-opt max-file=3 \
+            -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
+            -e PINECONE_API_KEY="${PINECONE_API_KEY}" \
+            -p ${APP_PORT}:${APP_PORT} \
+            "${IMAGE_URI}"
+          
+          echo "✅ Container started successfully"
+          
+      - name: Verify deployment
+        run: |
+          set -euo pipefail
+          
+          echo "⏳ Waiting for container to be ready..."
+          sleep 10
+          
+          echo "🔍 Verifying deployment..."
+          if docker ps --filter "name=medical-chat-bot" --format "{{.Names}}" | grep -q medical-chat-bot; then
+            echo "✅ Deployment successful!"
+            echo "🌐 Application is running on port ${APP_PORT}"
+          
+            docker ps --filter "name=medical-chat-bot" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            
+            docker image prune -f || true
+            
+          else
+            echo "❌ Deployment failed!"
+            echo "📋 Container logs:"
+            docker logs medical-chat-bot 2>/dev/null || echo "No logs available"
+            exit 1
+          fi
+          
+          echo "💾 Final disk usage:"
+          df -h / | head -2
